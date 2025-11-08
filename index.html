@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Catch the Box — Joc mic</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #0b1220;
+      --accent: #38bdf8;
+      --muted: #94a3b8;
+      --success: #34d399;
+    }
+    html,body { height:100%; margin:0; font-family:Inter,system-ui,Arial,sans-serif; background:linear-gradient(180deg,#07102a 0%, #0f1b39 100%); color:white; }
+    .wrap { max-width:900px; margin:28px auto; padding:20px; background:rgba(255,255,255,0.02); border-radius:12px; box-shadow:0 6px 24px rgba(2,6,23,0.6); }
+    header { display:flex; justify-content:space-between; align-items:center; gap:12px; }
+    h1 { font-size:20px; margin:0; }
+    .controls { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    button { background:var(--accent); color:#062029; border:none; padding:8px 12px; border-radius:8px; cursor:pointer; font-weight:600; }
+    button.secondary { background:transparent; color:var(--muted); border:1px solid rgba(255,255,255,0.06); }
+    .info { margin-top:14px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+    .panel { background:var(--panel); padding:10px 12px; border-radius:10px; min-width:120px; text-align:center; }
+    .board { margin-top:18px; position:relative; height:420px; border-radius:12px; overflow:hidden; background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(0,0,0,0.05)); display:flex; align-items:center; justify-content:center; }
+    .box { width:64px; height:64px; border-radius:10px; background:linear-gradient(135deg,var(--accent),#7dd3fc); position:absolute; display:flex; align-items:center; justify-content:center; color:#032; font-weight:700; user-select:none; cursor:pointer; transform:translate(-50%,-50%); box-shadow:0 10px 18px rgba(3,11,23,0.6); }
+    .hud { display:flex; gap:12px; margin-left:12px; }
+    footer { margin-top:16px; color:var(--muted); font-size:13px; }
+    .small { font-size:12px; color:var(--muted); }
+    .center { text-align:center; }
+    @media (max-width:600px) { .board { height:320px; } .box { width:56px; height:56px; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Catch the Box</h1>
+        <div class="small">Apasă pe cutiuță pentru puncte. Ai 30s. Niveluri care cresc viteza.</div>
+      </div>
+      <div class="controls">
+        <button id="startBtn">Start</button>
+        <button id="pauseBtn" class="secondary">Pauză</button>
+        <button id="resetBtn" class="secondary">Reset</button>
+      </div>
+    </header>
+
+    <div class="info">
+      <div class="panel">
+        <div class="small">Scor</div>
+        <div id="score" style="font-size:22px">0</div>
+      </div>
+      <div class="panel">
+        <div class="small">Timp (s)</div>
+        <div id="time" style="font-size:22px">30</div>
+      </div>
+      <div class="panel">
+        <div class="small">Nivel</div>
+        <div id="level" style="font-size:22px">1</div>
+      </div>
+      <div style="margin-left:auto" class="small">Version: demo • Click / Tap</div>
+    </div>
+
+    <div class="board" id="board" aria-label="Board">
+      <div class="center small" id="message">Apasă Start pentru a începe</div>
+    </div>
+
+    <footer>
+      <div class="small">Cod sursă: poți extinde cu leaderboard, sunete, sau salvare localStorage.</div>
+    </footer>
+  </div>
+
+  <script>
+    // Joc simplu: se afișează o boxă care se mută aleator; click pe box -> + puncte
+    (function(){
+      const startBtn = document.getElementById('startBtn');
+      const pauseBtn = document.getElementById('pauseBtn');
+      const resetBtn = document.getElementById('resetBtn');
+      const scoreEl = document.getElementById('score');
+      const timeEl = document.getElementById('time');
+      const levelEl = document.getElementById('level');
+      const board = document.getElementById('board');
+      const message = document.getElementById('message');
+
+      let box = null;
+      let score = 0;
+      let timeLeft = 30;
+      let level = 1;
+      let running = false;
+      let paused = false;
+      let tickInterval = null;
+      let moveInterval = null;
+
+      function createBox(){
+        if(box) box.remove();
+        box = document.createElement('div');
+        box.className = 'box';
+        box.textContent = '+1';
+        board.appendChild(box);
+        // random initial pos
+        const rect = board.getBoundingClientRect();
+        setBoxPos(Math.random()*rect.width, Math.random()*rect.height);
+        box.addEventListener('click', hitBox);
+        // also allow touch
+        box.addEventListener('touchstart', (e)=>{ e.preventDefault(); hitBox(); });
+      }
+
+      function setBoxPos(x,y){
+        const rect = board.getBoundingClientRect();
+        // clamp to avoid overflow
+        const bx = Math.max(32, Math.min(rect.width-32, x));
+        const by = Math.max(32, Math.min(rect.height-32, y));
+        box.style.left = bx + 'px';
+        box.style.top = by + 'px';
+      }
+
+      function hitBox(){
+        if(!running || paused) return;
+        score += 1;
+        scoreEl.textContent = score;
+        // accelerate a little when score increases
+        if(score % 5 === 0) {
+          level = Math.min(10, level+1);
+          levelEl.textContent = level;
+          resetMoveInterval();
+        }
+        // move quickly on hit
+        jumpBox();
+      }
+
+      function jumpBox(){
+        const rect = board.getBoundingClientRect();
+        const x = Math.random()*rect.width;
+        const y = Math.random()*rect.height;
+        // animate by setting transform (simple)
+        setBoxPos(x,y);
+      }
+
+      function startGame(){
+        if(running) return;
+        running = true;
+        paused = false;
+        score = 0;
+        timeLeft = 30;
+        level = 1;
+        scoreEl.textContent = score;
+        timeEl.textContent = timeLeft;
+        levelEl.textContent = level;
+        message.style.display = 'none';
+        createBox();
+        resetMoveInterval();
+        tickInterval = setInterval(tick, 1000);
+        pauseBtn.textContent = 'Pauză';
+      }
+
+      function resetMoveInterval(){
+        if(moveInterval) clearInterval(moveInterval);
+        // movement frequency depends on level (higher level -> faster -> lower ms)
+        const base = 1000; // ms
+        const interval = Math.max(200, base - (level-1)*120 - score*10);
+        moveInterval = setInterval(()=>{ if(!paused) jumpBox(); }, interval);
+      }
+
+      function tick(){
+        if(paused) return;
+        timeLeft -= 1;
+        timeEl.textContent = timeLeft;
+        if(timeLeft <= 0){
+          endGame();
+        }
+      }
+
+      function pauseGame(){
+        if(!running) return;
+        paused = !paused;
+        pauseBtn.textContent = paused ? 'Continuă' : 'Pauză';
+        message.style.display = paused ? 'block' : 'none';
+        if(paused) message.textContent = 'Pauză';
+      }
+
+      function resetGame(){
+        running = false;
+        paused = false;
+        clearIntervals();
+        if(box) box.remove();
+        message.style.display = 'block';
+        message.textContent = 'Apasă Start pentru a începe';
+        score = 0; timeLeft = 30; level = 1;
+        scoreEl.textContent = score;
+        timeEl.textContent = timeLeft;
+        levelEl.textContent = level;
+      }
+
+      function clearIntervals(){
+        if(tickInterval) { clearInterval(tickInterval); tickInterval = null; }
+        if(moveInterval) { clearInterval(moveInterval); moveInterval = null; }
+      }
+
+      function endGame(){
+        clearIntervals();
+        running = false;
+        message.style.display = 'block';
+        message.innerHTML = '<strong>Gata!</strong> Scor final: ' + score + '<br>Apasă Start pentru o nouă rundă';
+        // simple confetti-ish square burst (visual)
+        burstSquares(Math.min(25, 5 + score));
+      }
+
+      function burstSquares(n){
+        for(let i=0;i<n;i++){
+          const s = document.createElement('div');
+          s.style.position='absolute';
+          s.style.left = (Math.random()*100) + '%';
+          s.style.top = (Math.random()*100) + '%';
+          s.style.width = s.style.height = (6 + Math.random()*12) + 'px';
+          s.style.background = 'rgba(255,255,255,0.12)';
+          s.style.borderRadius = '3px';
+          s.style.pointerEvents = 'none';
+          board.appendChild(s);
+          setTimeout(()=>s.remove(), 1200 + Math.random()*800);
+        }
+      }
+
+      // event bindings
+      startBtn.addEventListener('click', startGame);
+      pauseBtn.addEventListener('click', pauseGame);
+      resetBtn.addEventListener('click', resetGame);
+
+      // keyboard support: space = start/pause
+      window.addEventListener('keydown', (e)=>{
+        if(e.code === 'Space'){ e.preventDefault(); if(!running) startGame(); else pauseGame(); }
+      });
+
+      // ensure board resizes gracefully
+      window.addEventListener('resize', ()=>{
+        if(box) {
+          // keep box inside board after resize
+          const rect = board.getBoundingClientRect();
+          const left = parseFloat(box.style.left) || rect.width/2;
+          const top = parseFloat(box.style.top) || rect.height/2;
+          setBoxPos(Math.min(left, rect.width-32), Math.min(top, rect.height-32));
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
