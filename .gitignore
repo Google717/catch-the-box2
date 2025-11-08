@@ -1,1 +1,9 @@
+# Fișiere de sistem
+.DS_Store
+Thumbs.db
+
+# Node.js (în caz că adaugi JS build tools mai târziu)
+node_modules/
+dist/
+.env
 
